@@ -273,6 +273,70 @@ func TestMariaDB_GaleraScaleDownThenUp(t *testing.T) {
 	assert.Equal(t, values.AbsoluteReplicas(3), got)
 }
 
+func TestMariaDB_ScalingChange(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name          string
+		haField       string
+		from, to      values.Replicas
+		wantAttribute string
+		wantFrom      values.Replicas
+		wantTo        values.Replicas
+	}{
+		{
+			name:          "galera scale down is a suspend",
+			haField:       "galera",
+			from:          values.AbsoluteReplicas(3),
+			to:            values.AbsoluteReplicas(0),
+			wantAttribute: "suspend",
+			wantFrom:      values.BooleanReplicas(false),
+			wantTo:        values.BooleanReplicas(true),
+		},
+		{
+			name:          "galera scale up is an unsuspend",
+			haField:       "galera",
+			from:          values.AbsoluteReplicas(0),
+			to:            values.AbsoluteReplicas(3),
+			wantAttribute: "suspend",
+			wantFrom:      values.BooleanReplicas(true),
+			wantTo:        values.BooleanReplicas(false),
+		},
+		{
+			name:          "galera replica change without suspend",
+			haField:       "galera",
+			from:          values.AbsoluteReplicas(3),
+			to:            values.AbsoluteReplicas(5),
+			wantAttribute: "replicas",
+			wantFrom:      values.AbsoluteReplicas(3),
+			wantTo:        values.AbsoluteReplicas(5),
+		},
+		{
+			name:          "standalone scale down",
+			from:          values.AbsoluteReplicas(1),
+			to:            values.AbsoluteReplicas(0),
+			wantAttribute: "replicas",
+			wantFrom:      values.AbsoluteReplicas(1),
+			wantTo:        values.AbsoluteReplicas(0),
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			mariaDBResource := newTestMariaDB(float64(3), test.haField)
+			summary := &scalingSummary{From: test.from, To: test.to}
+
+			attribute, logged := mariaDBResource.scalingChange(summary)
+			assert.Equal(t, test.wantAttribute, attribute)
+			assert.Equal(t, test.wantFrom, logged.From)
+			assert.Equal(t, test.wantTo, logged.To)
+			assert.Equal(t, test.from, summary.From, "the original summary must not be modified")
+		})
+	}
+}
+
 func TestMariaDB_GetReplicas_SuspendIgnoredWithoutGalera(t *testing.T) {
 	t.Parallel()
 

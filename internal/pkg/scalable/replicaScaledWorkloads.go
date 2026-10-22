@@ -29,6 +29,13 @@ type replicaScaledResource interface {
 	Compare(workloadCopy Workload) (jsondiff.Patch, error)
 }
 
+// scalingChangeReporter is implemented by a replicaScaledResource that is not always scaled through its replica count,
+// so the scaling log reports the attribute actually changed instead of replicas.
+type scalingChangeReporter interface {
+	// scalingChange returns the changed attribute and the summary to log for the given scaling summary
+	scalingChange(summary *scalingSummary) (string, *scalingSummary)
+}
+
 // replicaScaledWorkload is a wrapper for all resources which are scaled by setting the replica count.
 type replicaScaledWorkload struct {
 	replicaScaledResource
@@ -36,12 +43,23 @@ type replicaScaledWorkload struct {
 
 // LogUpscaleSuccessful logs a successful upscale using the original workload message style.
 func (r *replicaScaledWorkload) LogUpscaleSuccessful(summary *scalingSummary, dryRun bool, logger *slog.Logger) {
-	logWorkloadScalingMessage("scaled up", "replicas", r, summary, dryRun, logger)
+	r.logScalingMessage("scaled up", summary, dryRun, logger)
 }
 
 // LogDownscaleSuccessful logs a successful downscale using the original workload message style.
 func (r *replicaScaledWorkload) LogDownscaleSuccessful(summary *scalingSummary, dryRun bool, logger *slog.Logger) {
-	logWorkloadScalingMessage("scaled down", "replicas", r, summary, dryRun, logger)
+	r.logScalingMessage("scaled down", summary, dryRun, logger)
+}
+
+func (r *replicaScaledWorkload) logScalingMessage(action string, summary *scalingSummary, dryRun bool, logger *slog.Logger) {
+	if reporter, ok := r.replicaScaledResource.(scalingChangeReporter); ok {
+		changedAttribute, loggedSummary := reporter.scalingChange(summary)
+		logWorkloadScalingMessage(action, changedAttribute, r, loggedSummary, dryRun, logger)
+
+		return
+	}
+
+	logWorkloadScalingMessage(action, "replicas", r, summary, dryRun, logger)
 }
 
 // GetChildren delegates child discovery to the wrapped resource when it supports ParentWorkload.

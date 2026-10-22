@@ -252,6 +252,27 @@ func (m *mariaDB) isSuspended() bool {
 	return suspended
 }
 
+// scalingChange reports a Galera MariaDB scaled to or from 0 as a spec.suspend change, since its
+// spec.replicas is left untouched (see setReplicas). Any other scaling is a spec.replicas change.
+func (m *mariaDB) scalingChange(summary *scalingSummary) (string, *scalingSummary) {
+	if !m.isGaleraEnabled() || summary.From == nil || summary.To == nil {
+		return "replicas", summary
+	}
+
+	from, fromErr := summary.From.AsInt32()
+	to, toErr := summary.To.AsInt32()
+
+	if fromErr != nil || toErr != nil || (from != 0 && to != 0) {
+		return "replicas", summary
+	}
+
+	loggedSummary := *summary
+	loggedSummary.From = values.BooleanReplicas(from == 0)
+	loggedSummary.To = values.BooleanReplicas(to == 0)
+
+	return "suspend", &loggedSummary
+}
+
 // getSavedResourcesRequests returns the saved CPU and memory requests.
 //
 // MariaDB carries the per-instance resources of the mariadb container in spec.resources;
